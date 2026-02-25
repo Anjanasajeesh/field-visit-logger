@@ -24,6 +24,7 @@ class _AddVisitScreenState extends State<AddVisitScreen> {
   File? imageFile;
   double? latitude;
   double? longitude;
+  String? error;
 
   final List<String> cropTypes = [
     'Rice',
@@ -33,52 +34,49 @@ class _AddVisitScreenState extends State<AddVisitScreen> {
     'Vegetables',
   ];
 
-  Future<void> captureImage() async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.camera);
-    if (picked != null) {
+  Future<void> capturePhotoAndLocation() async {
+    try {
+      final picked = await ImagePicker().pickImage(source: ImageSource.camera);
+
+      if (picked == null) return;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        setState(() {
+          error = 'Location permission denied';
+        });
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
       setState(() {
         imageFile = File(picked.path);
+        latitude = position.latitude;
+        longitude = position.longitude;
+        error = null;
+      });
+    } catch (e) {
+      setState(() {
+        error = 'Failed to capture image or location';
       });
     }
-  }
-
-  Future<void> fetchLocation() async {
-    LocationPermission permission = await Geolocator.checkPermission();
-
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-
-    if (permission == LocationPermission.deniedForever) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Location permission denied')),
-      );
-      return;
-    }
-
-    final position = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.high,
-    );
-
-    setState(() {
-      latitude = position.latitude;
-      longitude = position.longitude;
-    });
   }
 
   Future<void> saveVisit() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (imageFile == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Please capture a photo')));
-      return;
-    }
-
-    if (latitude == null || longitude == null) {
+    if (imageFile == null || latitude == null || longitude == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fetch GPS location')),
+        const SnackBar(content: Text('Please capture photo to fetch location')),
       );
       return;
     }
@@ -96,7 +94,6 @@ class _AddVisitScreenState extends State<AddVisitScreen> {
     );
 
     await VisitDatabase.instance.insertVisit(visit);
-
     Navigator.pop(context);
   }
 
@@ -134,29 +131,30 @@ class _AddVisitScreenState extends State<AddVisitScreen> {
                   labelText: 'Notes (Optional)',
                 ),
               ),
+
               const SizedBox(height: 16),
 
               ElevatedButton(
-                onPressed: captureImage,
+                onPressed: capturePhotoAndLocation,
                 child: const Text('Capture Photo'),
               ),
+
               if (imageFile != null) ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
                 Image.file(imageFile!, height: 160),
               ],
 
-              const SizedBox(height: 12),
-
-              ElevatedButton(
-                onPressed: fetchLocation,
-                child: const Text('Fetch GPS Location'),
-              ),
               if (latitude != null && longitude != null) ...[
                 const SizedBox(height: 8),
                 Text(
                   'Location: $latitude , $longitude',
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
+              ],
+
+              if (error != null) ...[
+                const SizedBox(height: 8),
+                Text(error!, style: const TextStyle(color: Colors.red)),
               ],
 
               const SizedBox(height: 20),
